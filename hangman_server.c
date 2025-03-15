@@ -138,12 +138,14 @@ void* handleClient(void* socketDescriptor) {
     }
 
 
+    pthread_mutex_lock(&lock);   
+    activeConnections--;         
+    pthread_mutex_unlock(&lock); 
+
     strncat(dataServer.data, trueWord, dataServer.len);
-    pthread_mutex_lock(&lock);
     write(newsockfd, &dataServer, sizeof(dataServer));
-    close(newsockfd);
-    pthread_mutex_unlock(&lock);
-    activeConnections--;
+    close(newsockfd);            
+
     
     return NULL; 
 }
