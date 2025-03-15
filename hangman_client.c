@@ -1,128 +1,140 @@
-//Daniel Hwang and Nevin Manimaran
-//CS176a Homework 5b
-#include <sys/types.h>
-#include <sys/socket.h>
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <unistd.h>
 #include <string.h>
-#include <netdb.h> 
+#include <sys/types.h>
+#include <sys/socket.h>
 #include <netinet/in.h>
-void error(const char *message){
-    perror(message);
-    exit(EXIT_FAILURE);
+#include <netdb.h> 
+
+void error(const char *msg)
+{
+    perror(msg);
+    exit(0);
 }
-struct serverData{
-    short status;
-    short dataLength;
-    short increment;
-    char buffer[256];
+
+struct dataServer {
+    short flag;
+    short len;
+    short inc;
+    char data[256];
 };
-struct clientData{
-    int messageLength; 
-    char buffer[256];
+
+struct dataClient {
+    int msgLength;
+    char data[256];
 };
-int main(int argc, char *argv[]){
-    int sockDescriptor;
-    int portNum;
-    int n;
-    struct sockaddr_in serverAddr;
+
+int main(int argc, char *argv[])
+{
+    int sockfd, portno, n;
+    struct sockaddr_in serv_addr;
     struct hostent *server;
+
     char buffer[256];
-    if(3 >argc){
-        fprintf(stderr, "usage %s hostname port\n", argv[0]);
-        exit(EXIT_FAILURE);
+    if (argc < 3) {
+       fprintf(stderr,"usage %s hostname port\n", argv[0]);
+       exit(0);
     }
-    portNum = atoi(argv[2]);
-    sockDescriptor = socket(AF_INET, SOCK_STREAM, 0);
-    if (sockDescriptor < 0)
-        error("ERROR with socket");
-
+    portno = atoi(argv[2]);
+    sockfd = socket(AF_INET, SOCK_STREAM, 0);
+    if (sockfd < 0) 
+        error("ERROR opening socket");
     server = gethostbyname(argv[1]);
-    if(!server){
-        fprintf(stderr, "ERROR: Server not found\n");
-        exit(EXIT_FAILURE);
+    if (server == NULL) {
+        fprintf(stderr,"ERROR, no such host\n");
+        exit(0);
     }
-    bzero((char *) &serverAddr, sizeof(serverAddr));
-    serverAddr.sin_family = AF_INET;
+    bzero((char *) &serv_addr, sizeof(serv_addr));
+    serv_addr.sin_family = AF_INET;
     bcopy((char *)server->h_addr, 
-         (char *)&serverAddr.sin_addr.s_addr,
+         (char *)&serv_addr.sin_addr.s_addr,
          server->h_length);
-    serverAddr.sin_port = htons(portNum);
-    if (connect(sockDescriptor,(struct sockaddr *) &serverAddr,sizeof(serverAddr)) < 0) 
+    serv_addr.sin_port = htons(portno);
+    if (connect(sockfd,(struct sockaddr *) &serv_addr,sizeof(serv_addr)) < 0) 
         error("ERROR connecting");
-    
-    struct clientData clientData;
-    strcpy(clientData.buffer, "nope client");
-    n = write(sockDescriptor,&clientData, sizeof(clientData));
+    struct dataClient dataClient;
+    strcpy(dataClient.data, "nope client");
+    n = write(sockfd,&dataClient, sizeof(dataClient));
 
-    struct serverData serverData;
-    n = read(sockDescriptor, &serverData, sizeof(serverData));
-    //If a fourth client (player) tries to connect to the game-server, the server should send a
-    //“server-overloaded ” message then gracefully end the connection.
-    if(serverData.status == -1){
+    struct dataServer dataServer;
+
+    n = read(sockfd, &dataServer, sizeof(dataServer));
+    if(dataServer.flag == -1) {
         printf(">>>server-overloaded\n");
         return 0;
     }
-    //If the user says no terminate client otherwise send an empty message to the server
-    //with msg length = 0. (more on this below) signaling game start.
-    memset(&clientData, 0, sizeof(clientData));  
-    strcpy(clientData.buffer, "");  
-    clientData.messageLength = 0;
-    printf(">>>Ready to start game? (y/n): ");
-    fgets(buffer, 255, stdin);
 
-    if (buffer[0] != 'y') {
-        clientData.messageLength = 1;
-    }else{
-        clientData.messageLength = 0;
+    printf(">>>Ready to start the games? (y/n): ");
+    bzero(buffer,256);
+    fgets(buffer,255,stdin);
+
+    if(buffer[0] == 'y') {
+        dataClient.msgLength = 0;
+    } else {
+        dataClient.msgLength = 1;
     }
-    strcpy(clientData.buffer, buffer);
-    n=write(sockDescriptor, &clientData, sizeof(clientData));
-    if (n < 0)
+    strcpy(dataClient.data, buffer);
+
+    n = write(sockfd,&dataClient, sizeof(dataClient));
+    if (n < 0) 
         error("ERROR writing to socket");
 
-    if (buffer[0] != 'y') {
-        puts("");
+    if(buffer[0] != 'y') {
+        printf("\n");
         return 0;
     }
 
-    n = read(sockDescriptor, &serverData, sizeof(serverData));
-    while (serverData.status == 0 || serverData.status == 31) {
-        if (serverData.status == 31) {
-            printf("%s\n", serverData.buffer);
+    n = read(sockfd, &dataServer, sizeof(dataServer));
+    while(dataServer.flag == 0 || dataServer.flag == 31) {
+        if(dataServer.flag == 31) {
+            printf("%s\n", dataServer.data);
         } else {
             printf(">>>");
-            for (int i = 0; i < serverData.dataLength - 1; i++) {
-                printf("%c ", serverData.buffer[i]);
+            for(int i = 0; i < dataServer.len - 1; i++) {
+                printf("%c ", dataServer.data[i]);
             }
-            printf("%c", serverData.buffer[serverData.dataLength-1]);
-            puts("");
-            printf(">>>Incorrect Guesses: ");
-            for (int i = 0; i < serverData.increment-1; i++) {
-                printf("%c ", serverData.buffer[i+serverData.dataLength]);
+            printf("%c", dataServer.data[dataServer.len-1]);
+            printf("\n");
+            printf(">>>Incorrect Guesses:  ");
+            for(int i = 0; i < dataServer.inc-1; i++) {
+                printf("%c ", dataServer.data[i+dataServer.len]);
             }
-            if (serverData.increment > 0) {
-                printf("%c", serverData.buffer[serverData.increment+serverData.dataLength-1]);
+            if(dataServer.inc > 0) {
+                printf("%c", dataServer.data[dataServer.inc+dataServer.len-1]);
             }
-            puts("");
-
+            printf("\n");
         }
-        printf(">>>Letter to guess: ");
-        memset(clientData.buffer,0,256);
-        fgets(clientData.buffer,255,stdin);
-        clientData.messageLength=strlen(clientData.buffer)-1;
 
-        n = write(sockDescriptor, &clientData, sizeof(clientData));
+        if(dataServer.flag != 31) {
+            printf(">>>\n");
+        }
+
+        printf(">>>Pick to guess: ");
+        bzero(buffer,256);
+        if(fgets(buffer,255,stdin) == NULL) {
+            dataClient.msgLength = -1;
+        } else {
+            dataClient.msgLength = strlen(buffer)-1;
+        }
+
+        bzero(dataClient.data,256);
+        strcpy(dataClient.data, buffer);
+        n = write(sockfd,&dataClient, sizeof(dataClient));
         if (n < 0) {
             error("ERROR writing to socket");
+        } 
+        if(dataClient.msgLength == -1) {
+            printf("\n");
+            return 0;
         }
-        n = read(sockDescriptor, &serverData, sizeof(serverData));
+        n = read(sockfd, &dataServer, sizeof(dataServer));
     }
-    //If the player instead guesses 6 incorrect letters and loses the game, replace “You Win!” with
-    //“You Lose.”
-    printf(">>>The word was %s\n", &serverData.buffer[serverData.status]);
-    printf(">>>%.*s\n", serverData.status, serverData.buffer);
-    printf(">>>Game Over!\n");
+
+    printf(">>>The word was %s\n", &dataServer.data[dataServer.flag]);
+    printf(">>>%.*s\n", dataServer.flag, dataServer.data);
+    
+
     return 0;
 }
