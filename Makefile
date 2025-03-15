@@ -34,19 +34,19 @@ ARGS = -Wall
 
 
 # Compiling all the dependencies
-all: hangman_server Client_c
+all: hangman_server hangman_client
 
 # Replace <"your_program"> with the name of your specififc program. 
 # For example, the next line may look something like this: 'server_c_udp: server_c_udp.c' without quotes.
 hangman_server: hangman_server.c
 	$(CC) $(ARGS) -o hangman_server hangman_server.c
 
-Client_c: Client.c
-	$(CC) $(ARGS) -o Client_c Client.c
+hangman_client: hangman_client.c
+	$(CC) $(ARGS) -o hangman_client hangman_client.c
 
 clean:
 	rm -f *.o hangman_server *~
-	rm -f *.o Client_c *~
+	rm -f *.o hangman_client *~
 
 
 
