@@ -91,7 +91,7 @@ void* handleClient(void* socketDescriptor) {
     }
     char incorrectGuesses[MAX_GUESSES] = {0};
     dataServer.inc = 0;
-    
+    bzero(dataServer.data, 256);
     strncpy(dataServer.data, progress, dataServer.len);
     write(newsockfd, &dataServer, sizeof(dataServer));
     read(newsockfd, &dataClient, sizeof(dataClient));
