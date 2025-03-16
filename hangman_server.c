@@ -86,7 +86,9 @@ void* handleClient(void* socketDescriptor) {
     dataServer.len = strlen(trueWord);
 
     char progress[dataServer.len];
-    memset(progress, '_', dataServer.len);
+    for(int i = 0; i < dataServer.len; i++) {
+        progress[i] = '_';
+    }
     char incorrectGuesses[MAX_GUESSES] = {0};
     dataServer.inc = 0;
     
