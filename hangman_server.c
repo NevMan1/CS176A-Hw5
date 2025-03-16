@@ -2,43 +2,44 @@
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
-#include <sys/types.h>
+#include <sys/types.h> 
 #include <sys/socket.h>
 #include <netinet/in.h>
-#include <arpa/inet.h>
-#include <pthread.h>
 #include <stdbool.h>
 #include <ctype.h>
 #include <time.h>
+#include <arpa/inet.h> 
+#include <pthread.h>
 
-#define MAX_CLIENTS 3
-#define MAX_WORDS 15
-#define MAX_LENGTH 10
+#define MAX_CONNECTIONS 3
+#define WORDS_COUNT 15
+#define WORD_LENGTH 10
+#define MAX_GUESSES 6
 
+pthread_mutex_t lock = PTHREAD_MUTEX_INITIALIZER;
 int activeConnections = 0;
 
-void handleError(const char *message) {
-    perror(message);
-    exit(EXIT_FAILURE);
+void error(const char *msg) {
+    perror(msg);
+    exit(1);
 }
 
-struct ServerMessage {
-    short status;
-    short wordLength;
-    short incorrect;
-    char content[256];
+struct dataServer {
+    short flag;
+    short len;
+    short inc;
+    char data[256];
 };
 
-struct ClientMessage {
-    int length;
-    char content[256];
+struct dataClient {
+    int msgLength;
+    char data[256];
 };
 
-bool updateProgress(char* original, char* progress, char guess) {
-    int len = strlen(original);
+bool updateProgress(char *trueWord, char *progress, char guess) {
     bool found = false;
-    for (int i = 0; i < len; i++) {
-        if (original[i] == guess && progress[i] == '_') {
+    for (int i = 0; i < strlen(trueWord); i++) {
+        if (guess == trueWord[i] && progress[i] == '_') {
             progress[i] = guess;
             found = true;
         }
@@ -47,128 +48,153 @@ bool updateProgress(char* original, char* progress, char guess) {
 }
 
 void* handleClient(void* socketDescriptor) {
-    int clientSocket = *(int*)socketDescriptor;
-    struct ClientMessage clientMsg;
-    struct ServerMessage serverMsg;
+    int newsockfd = *(int*)socketDescriptor;
+    free(socketDescriptor);
+    struct dataClient dataClient;
+    struct dataServer dataServer;
     
-    read(clientSocket, &clientMsg, sizeof(clientMsg));
-    serverMsg.status = 0;
-    strcpy(serverMsg.content, "nope");
-    write(clientSocket, &serverMsg, sizeof(serverMsg));
-    read(clientSocket, &clientMsg, sizeof(clientMsg));
-
-    if (clientMsg.length != 0) {
-        serverMsg.status = 10;
-        write(clientSocket, &serverMsg, sizeof(serverMsg));
+    read(newsockfd, &dataClient, sizeof(dataClient));
+    dataServer.flag = 0;
+    strcpy(dataServer.data, "nope");
+    write(newsockfd, &dataServer, sizeof(dataServer));
+    read(newsockfd, &dataClient, sizeof(dataClient));
+    
+    if (dataClient.msgLength != 0) {
+        dataServer.flag = 10;
+        write(newsockfd, &dataServer, sizeof(dataServer));
+        pthread_mutex_lock(&lock);
         activeConnections--;
-        close(clientSocket);
+        pthread_mutex_unlock(&lock);
+        close(newsockfd);
         return NULL;
     }
 
-    FILE *wordFile = fopen("hangman_words.txt", "r");
-    char words[MAX_WORDS][MAX_LENGTH];
-    char chosenWord[MAX_LENGTH];
-
-    for (int i = 0; i < MAX_WORDS; i++) {
-        fgets(words[i], MAX_LENGTH, wordFile);
+    FILE *file = fopen("hangman_words.txt", "r");
+    if (!file) {
+        error("Error opening file");
     }
-    fclose(wordFile);
-
-    srand(time(NULL));
-    strcpy(chosenWord, words[rand() % MAX_WORDS]);
-    serverMsg.wordLength = strlen(chosenWord);
     
-    if (chosenWord[serverMsg.wordLength - 1] == '\n') {
-        serverMsg.wordLength--;
+    char words[WORDS_COUNT][WORD_LENGTH];
+    for (int i = 0; i < WORDS_COUNT; i++) {
+        fgets(words[i], WORD_LENGTH, file);
+        strtok(words[i], "\n");
     }
+    fclose(file);
 
-    char displayedWord[serverMsg.wordLength];
-    memset(displayedWord, '_', serverMsg.wordLength);
-    char wrongGuesses[6] = {0};
-    serverMsg.incorrect = 0;
+    char trueWord[WORD_LENGTH];
+    strcpy(trueWord, words[rand() % WORDS_COUNT]);
+    dataServer.len = strlen(trueWord);
 
-    strncpy(serverMsg.content, displayedWord, serverMsg.wordLength);
-    write(clientSocket, &serverMsg, sizeof(serverMsg));
-    read(clientSocket, &clientMsg, sizeof(clientMsg));
+    char progress[dataServer.len];
+    memset(progress, '_', dataServer.len);
+    char incorrectGuesses[MAX_GUESSES] = {0};
+    dataServer.inc = 0;
     
-    bool won;
-    while (1) {
-        if (clientMsg.length == -1) {
+    strncpy(dataServer.data, progress, dataServer.len);
+    write(newsockfd, &dataServer, sizeof(dataServer));
+    read(newsockfd, &dataClient, sizeof(dataClient));
+    
+    
+    while(1) {
+        if(dataClient.msgLength == -1) {
             activeConnections--;
-            close(clientSocket);
+            close(newsockfd);
             return NULL;
         }
-        if (clientMsg.length != 1 || !isalpha(clientMsg.content[0])) {
-            serverMsg.status = 31;
-            strcpy(serverMsg.content, ">>>Error! Guess one letter.");
-            write(clientSocket, &serverMsg, sizeof(serverMsg));
-            read(clientSocket, &clientMsg, sizeof(clientMsg));
+        if(dataClient.msgLength != 1 || !isalpha(dataClient.data[0])) {
+            dataServer.flag = 31;
+            strcpy(dataServer.data, ">>>Error! Please guess one letter.");
+            write(newsockfd, &dataServer, sizeof(dataServer));
+            read(newsockfd,&dataClient, sizeof(dataClient));
             continue;
         }
 
-        if (updateProgress(chosenWord, displayedWord, clientMsg.content[0])) {
-            if (strncmp(displayedWord, chosenWord, serverMsg.wordLength) == 0) {
-                won = true;
+        bool correct = updateProgress(trueWord, progress, dataClient.data[0]);
+        if(correct) {
+            if (strncmp(progress, trueWord, dataServer.len) == 0) {
+               
+                dataServer.flag = 8;
+                strcpy(dataServer.data, "You Win!");
                 break;
-            }
+            } 
+            
         } else {
-            wrongGuesses[serverMsg.incorrect] = clientMsg.content[0];
-            serverMsg.incorrect++;
-            if (serverMsg.incorrect == 6) {
-                won = false;
+            incorrectGuesses[dataServer.inc++] = dataClient.data[0];
+            
+            if(dataServer.inc == 6) {
+               
+                dataServer.flag = 9;
+                strcpy(dataServer.data, "You Lose!");
                 break;
             }
         }
 
-        serverMsg.status = 0;
-        snprintf(serverMsg.content, sizeof(serverMsg.content), "%s%s", displayedWord, wrongGuesses);
-        write(clientSocket, &serverMsg, sizeof(serverMsg));
-        read(clientSocket, &clientMsg, sizeof(clientMsg));
+        dataServer.flag = 0;
+        bzero(dataServer.data, 256);
+        strncpy(dataServer.data, progress, dataServer.len);
+        strcat(dataServer.data, incorrectGuesses);
+        write(newsockfd, &dataServer, sizeof(dataServer));
+        read(newsockfd,&dataClient, sizeof(dataClient));
     }
 
-    serverMsg.status = won ? 8 : 9;
-    snprintf(serverMsg.content, sizeof(serverMsg.content), "%s%s", won ? "You Win! " : "You Lose! ", chosenWord);
-    write(clientSocket, &serverMsg, sizeof(serverMsg));
-    close(clientSocket);
+
+    strncat(dataServer.data, trueWord, dataServer.len);
+    pthread_mutex_lock(&lock);
+    write(newsockfd, &dataServer, sizeof(dataServer));
+    close(newsockfd);
+    pthread_mutex_unlock(&lock);
     activeConnections--;
-    return NULL;
+    
+    return NULL; 
 }
 
-void rejectClient(int socket) {
-    struct ServerMessage serverMsg;
-    serverMsg.status = -1;
-    write(socket, &serverMsg, sizeof(serverMsg));
-    close(socket);
+void rejectClient(int newsockfd) {
+    struct dataServer dataServer;
+    dataServer.flag = -1;
+    write(newsockfd, &dataServer, sizeof(dataServer));
+    close(newsockfd);
 }
 
 int main() {
-    int serverSocket;
-    struct sockaddr_in serverAddr, clientAddr;
-    socklen_t clientLen = sizeof(clientAddr);
-    pthread_t clientThreads[MAX_CLIENTS];
+    srand(time(NULL));
+    int sockfd = socket(AF_INET, SOCK_STREAM, 0);
+    if (sockfd < 0) error("ERROR opening socket");
 
-    serverSocket = socket(AF_INET, SOCK_STREAM, 0);
-    if (serverSocket < 0) handleError("Socket creation failed");
-    
-    serverAddr.sin_family = AF_INET;
-    serverAddr.sin_addr.s_addr = inet_addr("127.0.0.1");
-    serverAddr.sin_port = htons(8080);
+    struct sockaddr_in serv_addr = {0};
+    serv_addr.sin_family = AF_INET;
+    serv_addr.sin_addr.s_addr = inet_addr("127.0.0.1");
+    serv_addr.sin_port = htons(8080);
 
-    if (bind(serverSocket, (struct sockaddr*)&serverAddr, sizeof(serverAddr)) < 0) {
-        handleError("Binding failed");
-    }
+    if (bind(sockfd, (struct sockaddr*)&serv_addr, sizeof(serv_addr)) < 0)
+        error("ERROR on binding");
+
+    listen(sockfd, MAX_CONNECTIONS);
+    struct sockaddr_in cli_addr;
+    socklen_t clilen = sizeof(cli_addr);
     
-    listen(serverSocket, MAX_CLIENTS);
     while (1) {
-        int clientSocket = accept(serverSocket, (struct sockaddr*)&clientAddr, &clientLen);
-        if (clientSocket < 0) handleError("Accept failed");
-        
-        if (activeConnections >= MAX_CLIENTS) {
-            rejectClient(clientSocket);
+        int *newsockfd_ptr = malloc(sizeof(int));
+        *newsockfd_ptr = accept(sockfd, (struct sockaddr*)&cli_addr, &clilen);
+        if (*newsockfd_ptr < 0) error("ERROR on accept");
+
+        pthread_mutex_lock(&lock);
+        if (activeConnections >= MAX_CONNECTIONS) {
+            pthread_mutex_unlock(&lock);
+            rejectClient(*newsockfd_ptr);
+            free(newsockfd_ptr);
         } else {
             activeConnections++;
-            pthread_create(&clientThreads[activeConnections - 1], NULL, handleClient, (void*)&clientSocket);
+            pthread_mutex_unlock(&lock);
+            pthread_t thread;
+            pthread_create(&thread, NULL, handleClient, newsockfd_ptr);
+            pthread_detach(thread);
         }
     }
+
+    close(sockfd);
     return 0;
 }
+
+
+
+
