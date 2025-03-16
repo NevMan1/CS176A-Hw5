@@ -125,7 +125,7 @@ void* handleClient(void* socketDescriptor) {
             }
             if (dataServer.inc == MAX_GUESSES) {
                 dataServer.flag = 9;
-                snprintf(dataServer.data, sizeof(dataServer.data), "You Lose! The word was: %s", trueWord);
+                snprintf(dataServer.data, sizeof(dataServer.data), "%s", trueWord);
                 break;
             }
         }
