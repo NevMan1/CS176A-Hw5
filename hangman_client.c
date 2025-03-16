@@ -90,7 +90,7 @@ int main(int argc, char *argv[]) {
         } else {
             printf(">>>");
             printf("mycode  ");
-            printf("%c ", serverData.data[0]);
+            printf("_");
             for (int i = 0; i < serverData.dataLength - 1; i++) {
                 printf("%c ", serverData.data[i]);
             }
