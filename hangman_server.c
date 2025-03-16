@@ -119,12 +119,13 @@ void* handleClient(void* socketDescriptor) {
             } 
             
         } else {
-            incorrectGuesses[dataServer.inc++] = dataClient.data[0];
-            
-            if(dataServer.inc == 6) {
-               
+            if (dataServer.inc < MAX_GUESSES) {
+                incorrectGuesses[dataServer.inc] = dataClient.data[0];  
+                dataServer.inc++;
+            }
+            if (dataServer.inc == MAX_GUESSES) {
                 dataServer.flag = 9;
-                strcpy(dataServer.data, "You Lose!");
+                snprintf(dataServer.data, sizeof(dataServer.data), "You Lose! The word was: %s", trueWord);
                 break;
             }
         }
